@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Force UTF-8 stdout/stderr so non-ASCII transcriptions render correctly
+    # on Windows consoles (which default to cp949/cp1252).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
     args = parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
