@@ -9,6 +9,7 @@ Windows.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -17,11 +18,13 @@ import torch
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 TARGET_SR = 16_000
+# Whisper's mel-spectrogram input covers 30 s — anything longer is truncated.
+MAX_AUDIO_SECONDS = 30
 
 
 def load_audio(path: str) -> np.ndarray:
     """Read a WAV/FLAC file as float32 mono at 16 kHz."""
-    audio, sr = sf.read(path, dtype="float32", always_2d=False)
+    audio, sr = sf.read(path, dtype="float32")
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
     if sr != TARGET_SR:
@@ -47,6 +50,8 @@ def parse_args() -> argparse.Namespace:
         help="Language code, e.g. 'en' or 'ko'. Auto-detected if omitted.",
     )
     p.add_argument("--task", default="transcribe", choices=["transcribe", "translate"])
+    # Whisper's `max_target_positions` is 448; 440 leaves a small headroom for
+    # the forced prefix tokens (<|sot|><|lang|><|task|><|notimestamps|>).
     p.add_argument("--max-new-tokens", type=int, default=440)
     return p.parse_args()
 
@@ -60,6 +65,9 @@ def main() -> int:
 
     args = parse_args()
 
+    if not os.path.isfile(args.audio):
+        sys.exit(f"audio file not found: {args.audio}")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Loading {args.model} on {device}...", file=sys.stderr)
 
@@ -68,17 +76,39 @@ def main() -> int:
     model.eval()
 
     audio = load_audio(args.audio)
+    duration = len(audio) / TARGET_SR
+    if duration > MAX_AUDIO_SECONDS:
+        print(
+            f"warning: audio is {duration:.1f}s; Whisper truncates to "
+            f"{MAX_AUDIO_SECONDS}s, only the first chunk will be decoded.",
+            file=sys.stderr,
+        )
+
     inputs = processor(audio, sampling_rate=TARGET_SR, return_tensors="pt")
     input_features = inputs.input_features.to(device)
+
+    if args.language is None:
+        # Surface the auto-detected language so users can sanity-check results.
+        # `transformers` >= 5 strips the forced prefix from `generate` output,
+        # so we ask the model directly instead of inspecting `generated[0, 1]`.
+        with torch.no_grad():
+            lang_token_ids = model.detect_language(input_features)
+        lang_token = processor.tokenizer.convert_ids_to_tokens(
+            lang_token_ids[0].item()
+        )
+        print(f"Detected language: {lang_token}", file=sys.stderr)
 
     generate_kwargs: dict = {
         "num_beams": 1,
         "do_sample": False,
         "max_new_tokens": args.max_new_tokens,
     }
+    # `transformers` warns if `language` is set without `task`, so always pair
+    # them when either differs from the auto-detect / default path.
     if args.language is not None:
         generate_kwargs["language"] = args.language
-    if args.task != "transcribe":
+        generate_kwargs["task"] = args.task
+    elif args.task != "transcribe":
         generate_kwargs["task"] = args.task
 
     with torch.no_grad():

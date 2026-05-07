@@ -36,3 +36,8 @@ default HF cache (`~/.cache/huggingface` on Linux,
 
 Input audio is converted to mono 16 kHz internally. WAV and FLAC are
 supported out of the box; for other formats, convert first.
+
+> **30 s limit.** `WhisperProcessor` pads/truncates the input to 30 seconds,
+> so longer files are silently cut. The script prints a warning when this
+> happens. For long-form audio, chunk the input first or use a long-form
+> pipeline like `transformers.pipeline(..., chunk_length_s=30)`.
