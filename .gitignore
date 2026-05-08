@@ -146,6 +146,9 @@ cython_debug/
 *.swp
 *.swo
 
+# Local agent guidance
+CLAUDE.md
+
 # OS
 .DS_Store
 Thumbs.db
