@@ -16,6 +16,14 @@ pip install -r requirements.txt
 
 > On Windows, `pip install torch` from PyPI ships a CPU build by default, so
 > the same `requirements.txt` works on machines without a GPU.
+>
+> On **Linux**, the default PyPI wheel pulls in CUDA runtimes (~3 GB extra).
+> If you don't have a GPU, install the CPU-only wheels first, then the rest:
+>
+> ```bash
+> pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+> pip install -r requirements.txt
+> ```
 
 ## Greedy decoding
 

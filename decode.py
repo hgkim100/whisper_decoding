@@ -84,8 +84,14 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    inputs = processor(audio, sampling_rate=TARGET_SR, return_tensors="pt")
+    inputs = processor(
+        audio,
+        sampling_rate=TARGET_SR,
+        return_tensors="pt",
+        return_attention_mask=True,
+    )
     input_features = inputs.input_features.to(device)
+    attention_mask = inputs.attention_mask.to(device)
 
     if args.language is None:
         # Surface the auto-detected language so users can sanity-check results.
@@ -102,6 +108,7 @@ def main() -> int:
         "num_beams": 1,
         "do_sample": False,
         "max_new_tokens": args.max_new_tokens,
+        "attention_mask": attention_mask,
     }
     # `transformers` warns if `language` is set without `task`, so always pair
     # them when either differs from the auto-detect / default path.
@@ -114,7 +121,14 @@ def main() -> int:
     with torch.no_grad():
         generated = model.generate(input_features, **generate_kwargs)
 
-    text = processor.batch_decode(generated, skip_special_tokens=True)[0]
+    # `clean_up_tokenization_spaces=True` is destructive for Whisper's BPE
+    # tokenizer (it strips spaces around punctuation and around CJK tokens,
+    # turning e.g. "음성인식 테스트" into "음성인 식태스트").
+    text = processor.batch_decode(
+        generated,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+    )[0]
     print(text)
     return 0
 
